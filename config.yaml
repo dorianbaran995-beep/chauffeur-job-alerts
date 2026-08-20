@@ -229,21 +229,33 @@ search:
 filter:
   include_title_terms:
     - chauffeur
-    - driver
-    - executive transport
-    - close protection driver
+    - private driver
+    - personal driver
+    - executive driver
+    - VIP driver
+    - VVIP driver
     - security driver
+    - close protection driver
+    - principal driver
+    - CEO driver
+    - family driver
+    - household driver
+    - executive transport
   exclude_title_terms:
-    - delivery driver
+    - delivery
+    - home delivery
     - hgv
     - lgv
-    - truck driver
+    - truck
     - bus driver
     - coach driver
-    - van driver
+    - van
     - courier
+    - parcel
     - food delivery
     - forklift
-    - taxi driver
+    - taxi
     - uber
     - rideshare
+    - multi drop
+    - multidrop
