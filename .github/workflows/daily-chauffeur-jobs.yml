@@ -2,8 +2,10 @@ name: Daily chauffeur job search
 
 on:
   schedule:
-    # 07:00 UTC = 08:00 in the UK during BST and 07:00 during GMT.
-    - cron: "0 7 * * *"
+    # GitHub cron uses UTC. These two schedules plus the UK-time guard below
+    # keep delivery targeted at 06:55 Europe/London through both BST and GMT.
+    - cron: "55 5 * * *"
+    - cron: "55 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -18,19 +20,43 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Check UK schedule
+        id: uk_schedule
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          london_offset="$(TZ=Europe/London date +%z)"
+          scheduled_cron="${{ github.event.schedule }}"
+
+          if { [ "$scheduled_cron" = "55 5 * * *" ] && [ "$london_offset" = "+0100" ]; } || \
+             { [ "$scheduled_cron" = "55 6 * * *" ] && [ "$london_offset" = "+0000" ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping this UTC slot; it is not the 06:55 UK slot today."
+          fi
+
       - name: Checkout
+        if: steps.uk_schedule.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
+        if: steps.uk_schedule.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        if: steps.uk_schedule.outputs.run == 'true'
         run: pip install -r requirements.txt
 
       - name: Search jobs and email results
+        if: steps.uk_schedule.outputs.run == 'true'
         env:
           SMTP_HOST: smtp.hostinger.com
           SMTP_PORT: "465"
@@ -41,6 +67,7 @@ jobs:
         run: python smtp_runner.py
 
       - name: Save seen-job history
+        if: steps.uk_schedule.outputs.run == 'true'
         run: |
           if git diff --quiet -- data/seen_jobs.json; then
             echo "No seen-job changes to save."
