@@ -1,4 +1,4 @@
-name: Daily chauffeur job search
+name: Daily UK + International chauffeur job search
 
 on:
   schedule:
@@ -18,7 +18,8 @@ concurrency:
 jobs:
   search-and-email:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The worldwide search is intentionally large and can take longer than a UK-only scan.
+    timeout-minutes: 120
     steps:
       - name: Check UK schedule
         id: uk_schedule
@@ -55,7 +56,7 @@ jobs:
         if: steps.uk_schedule.outputs.run == 'true'
         run: pip install -r requirements.txt
 
-      - name: Search jobs and email results
+      - name: Search UK and international jobs and email results
         if: steps.uk_schedule.outputs.run == 'true'
         env:
           SMTP_HOST: smtp.hostinger.com
