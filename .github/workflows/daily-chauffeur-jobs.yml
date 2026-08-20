@@ -1,0 +1,50 @@
+name: Daily chauffeur job search
+
+on:
+  schedule:
+    # 07:00 UTC = 08:00 in the UK during BST and 07:00 during GMT.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: chauffeur-job-search
+  cancel-in-progress: false
+
+jobs:
+  search-and-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Search jobs and email results
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ vars.EMAIL_TO }}
+        run: python main.py
+
+      - name: Save seen-job history
+        run: |
+          if git diff --quiet -- data/seen_jobs.json; then
+            echo "No seen-job changes to save."
+            exit 0
+          fi
+          git config user.name "chauffeur-job-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -- data/seen_jobs.json
+          git commit -m "Update seen chauffeur jobs"
+          git push
