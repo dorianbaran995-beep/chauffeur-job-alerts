@@ -32,10 +32,13 @@ jobs:
 
       - name: Search jobs and email results
         env:
+          SMTP_HOST: smtp.hostinger.com
+          SMTP_PORT: "465"
+          SMTP_SECURITY: ssl
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           EMAIL_TO: ${{ vars.EMAIL_TO }}
-        run: python main.py
+        run: python smtp_runner.py
 
       - name: Save seen-job history
         run: |
