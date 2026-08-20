@@ -1,11 +1,13 @@
 email:
   to: ""
-  subject_prefix: "Daily Chauffeur Jobs"
+  subject_prefix: "UK + International Chauffeur Jobs"
 
 search:
-  hours_old: 72
-  results_per_search: 25
-  max_email_jobs: 120
+  # Search the previous 7 days on every daily run. The seen-jobs file prevents
+  # vacancies already emailed from being sent again.
+  hours_old: 168
+  results_per_search: 35
+  max_email_jobs: 250
   sites:
     - indeed
     - linkedin
@@ -17,53 +19,212 @@ search:
     - chauffeur
     - private chauffeur
     - family chauffeur
+    - private family chauffeur
+    - household chauffeur
+    - executive chauffeur
+    - personal chauffeur
     - private driver
     - personal driver
     - executive driver
     - VIP driver
+    - VVIP driver
     - security driver
+    - close protection driver
+    - principal driver
+    - CEO driver
 
+  # UK gets the deepest search. Major international markets use a broad set of
+  # terms, while extended global markets use the strongest core terms so the
+  # daily scan remains practical while still covering a very wide geography.
   markets:
     - name: United Kingdom
       location: United Kingdom
       country_indeed: uk
       priority: primary
+
+    # Major international markets
     - name: United Arab Emirates
       location: United Arab Emirates
       country_indeed: united arab emirates
-      priority: international
-    - name: Hong Kong
-      location: Hong Kong
-      country_indeed: hong kong
-      priority: international
-    - name: Singapore
-      location: Singapore
-      country_indeed: singapore
-      priority: international
-    - name: Switzerland
-      location: Switzerland
-      country_indeed: switzerland
-      priority: international
+      priority: major
     - name: Saudi Arabia
       location: Saudi Arabia
       country_indeed: saudi arabia
-      priority: international
+      priority: major
     - name: Qatar
       location: Qatar
       country_indeed: qatar
-      priority: international
+      priority: major
+    - name: Bahrain
+      location: Bahrain
+      country_indeed: bahrain
+      priority: major
+    - name: Kuwait
+      location: Kuwait
+      country_indeed: kuwait
+      priority: major
+    - name: Oman
+      location: Oman
+      country_indeed: oman
+      priority: major
+    - name: Hong Kong
+      location: Hong Kong
+      country_indeed: hong kong
+      priority: major
+    - name: Singapore
+      location: Singapore
+      country_indeed: singapore
+      priority: major
+    - name: Switzerland
+      location: Switzerland
+      country_indeed: switzerland
+      priority: major
+    - name: Ireland
+      location: Ireland
+      country_indeed: ireland
+      priority: major
+    - name: France
+      location: France
+      country_indeed: france
+      priority: major
+    - name: Germany
+      location: Germany
+      country_indeed: germany
+      priority: major
+    - name: Netherlands
+      location: Netherlands
+      country_indeed: netherlands
+      priority: major
+    - name: Belgium
+      location: Belgium
+      country_indeed: belgium
+      priority: major
+    - name: Luxembourg
+      location: Luxembourg
+      country_indeed: luxembourg
+      priority: major
     - name: Australia
       location: Australia
       country_indeed: australia
-      priority: international
+      priority: major
+    - name: New Zealand
+      location: New Zealand
+      country_indeed: new zealand
+      priority: major
     - name: Canada
       location: Canada
       country_indeed: canada
-      priority: international
+      priority: major
     - name: United States
       location: United States
       country_indeed: usa
-      priority: international
+      priority: major
+
+    # Extended international markets
+    - name: Austria
+      location: Austria
+      country_indeed: austria
+      priority: extended
+    - name: Italy
+      location: Italy
+      country_indeed: italy
+      priority: extended
+    - name: Spain
+      location: Spain
+      country_indeed: spain
+      priority: extended
+    - name: Portugal
+      location: Portugal
+      country_indeed: portugal
+      priority: extended
+    - name: Sweden
+      location: Sweden
+      country_indeed: sweden
+      priority: extended
+    - name: Norway
+      location: Norway
+      country_indeed: norway
+      priority: extended
+    - name: Denmark
+      location: Denmark
+      country_indeed: denmark
+      priority: extended
+    - name: Finland
+      location: Finland
+      country_indeed: finland
+      priority: extended
+    - name: Poland
+      location: Poland
+      country_indeed: poland
+      priority: extended
+    - name: Czech Republic
+      location: Czech Republic
+      country_indeed: czech republic
+      priority: extended
+    - name: Greece
+      location: Greece
+      country_indeed: greece
+      priority: extended
+    - name: Romania
+      location: Romania
+      country_indeed: romania
+      priority: extended
+    - name: Israel
+      location: Israel
+      country_indeed: israel
+      priority: extended
+    - name: Malaysia
+      location: Malaysia
+      country_indeed: malaysia
+      priority: extended
+    - name: Thailand
+      location: Thailand
+      country_indeed: thailand
+      priority: extended
+    - name: Japan
+      location: Japan
+      country_indeed: japan
+      priority: extended
+    - name: South Korea
+      location: South Korea
+      country_indeed: south korea
+      priority: extended
+    - name: China
+      location: China
+      country_indeed: china
+      priority: extended
+    - name: Taiwan
+      location: Taiwan
+      country_indeed: taiwan
+      priority: extended
+    - name: Philippines
+      location: Philippines
+      country_indeed: philippines
+      priority: extended
+    - name: Indonesia
+      location: Indonesia
+      country_indeed: indonesia
+      priority: extended
+    - name: India
+      location: India
+      country_indeed: india
+      priority: extended
+    - name: South Africa
+      location: South Africa
+      country_indeed: south africa
+      priority: extended
+    - name: Turkey
+      location: Turkey
+      country_indeed: turkey
+      priority: extended
+    - name: Mexico
+      location: Mexico
+      country_indeed: mexico
+      priority: extended
+    - name: Brazil
+      location: Brazil
+      country_indeed: brazil
+      priority: extended
 
 filter:
   include_title_terms:
@@ -78,9 +239,11 @@ filter:
     - lgv
     - truck driver
     - bus driver
+    - coach driver
     - van driver
     - courier
     - food delivery
     - forklift
     - taxi driver
     - uber
+    - rideshare
