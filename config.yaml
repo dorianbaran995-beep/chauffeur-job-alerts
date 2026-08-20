@@ -1,0 +1,86 @@
+email:
+  to: ""
+  subject_prefix: "Daily Chauffeur Jobs"
+
+search:
+  hours_old: 72
+  results_per_search: 25
+  max_email_jobs: 120
+  sites:
+    - indeed
+    - linkedin
+    - glassdoor
+    - google
+    - zip_recruiter
+
+  keywords:
+    - chauffeur
+    - private chauffeur
+    - family chauffeur
+    - private driver
+    - personal driver
+    - executive driver
+    - VIP driver
+    - security driver
+
+  markets:
+    - name: United Kingdom
+      location: United Kingdom
+      country_indeed: uk
+      priority: primary
+    - name: United Arab Emirates
+      location: United Arab Emirates
+      country_indeed: united arab emirates
+      priority: international
+    - name: Hong Kong
+      location: Hong Kong
+      country_indeed: hong kong
+      priority: international
+    - name: Singapore
+      location: Singapore
+      country_indeed: singapore
+      priority: international
+    - name: Switzerland
+      location: Switzerland
+      country_indeed: switzerland
+      priority: international
+    - name: Saudi Arabia
+      location: Saudi Arabia
+      country_indeed: saudi arabia
+      priority: international
+    - name: Qatar
+      location: Qatar
+      country_indeed: qatar
+      priority: international
+    - name: Australia
+      location: Australia
+      country_indeed: australia
+      priority: international
+    - name: Canada
+      location: Canada
+      country_indeed: canada
+      priority: international
+    - name: United States
+      location: United States
+      country_indeed: usa
+      priority: international
+
+filter:
+  include_title_terms:
+    - chauffeur
+    - driver
+    - executive transport
+    - close protection driver
+    - security driver
+  exclude_title_terms:
+    - delivery driver
+    - hgv
+    - lgv
+    - truck driver
+    - bus driver
+    - van driver
+    - courier
+    - food delivery
+    - forklift
+    - taxi driver
+    - uber
