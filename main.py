@@ -56,7 +56,6 @@ def load_seen() -> dict[str, str]:
 
 def save_seen(seen: dict[str, str]) -> None:
     SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # Keep enough history to prevent repeat emails while avoiding unlimited growth.
     items = list(seen.items())[-10000:]
     SEEN_PATH.write_text(json.dumps(dict(items), indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -103,6 +102,22 @@ def title_is_relevant(title: str, cfg: dict[str, Any]) -> bool:
     if any(x in t for x in excludes):
         return False
     return any(x in t for x in includes)
+
+
+def is_chauffeur_job(job: Job) -> bool:
+    """Primary result type: any vacancy with chauffeur in the job title."""
+    return "chauffeur" in job.title.lower()
+
+
+def job_sort_key(job: Job) -> tuple[Any, ...]:
+    """Put all chauffeur-titled jobs first, then sort everything by job title."""
+    return (
+        0 if is_chauffeur_job(job) else 1,
+        job.title.lower(),
+        0 if job.market == "United Kingdom" else 1,
+        job.market.lower(),
+        job.company.lower(),
+    )
 
 
 def terms_for_market(market: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
@@ -161,7 +176,6 @@ def scrape_one(term: str, market: dict[str, Any], cfg: dict[str, Any]) -> pd.Dat
         frame["_term"] = term
         return frame
     except Exception as exc:
-        # One job board/country combination failing must not stop the worldwide run.
         log.warning("Search failed: %s / %s: %s", market["name"], term, exc)
         return pd.DataFrame()
 
@@ -183,7 +197,6 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
             frame = scrape_one(term, market, cfg)
             if not frame.empty:
                 frames.append(frame)
-            # Small delay lowers the chance of job-board throttling during a large scan.
             time.sleep(0.8)
 
     if not frames:
@@ -215,7 +228,7 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
         dedup.setdefault(uid, job)
 
     jobs = list(dedup.values())
-    jobs.sort(key=lambda job: (0 if job.market == "United Kingdom" else 1, job.market.lower(), job.title.lower()))
+    jobs.sort(key=job_sort_key)
     return jobs
 
 
@@ -238,38 +251,37 @@ def _job_card(job: Job) -> str:
 
 def make_html(jobs: list[Job]) -> str:
     today = datetime.now(timezone.utc).strftime("%d %B %Y")
-    uk_jobs = [job for job in jobs if job.market == "United Kingdom"]
-    international_jobs = [job for job in jobs if job.market != "United Kingdom"]
+    chauffeur_jobs = [job for job in jobs if is_chauffeur_job(job)]
+    additional_jobs = [job for job in jobs if not is_chauffeur_job(job)]
 
     sections: list[str] = []
     sections.append(
-        f'<h2 style="font-family:Arial,sans-serif;margin-top:26px">🇬🇧 United Kingdom — {len(uk_jobs)} new jobs</h2>'
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:26px">🚘 Chauffeur Jobs — {len(chauffeur_jobs)} new jobs</h2>'
     )
-    if uk_jobs:
-        sections.extend(_job_card(job) for job in uk_jobs)
+    sections.append(
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Priority results: every vacancy with chauffeur in the job title, across all markets.</p>'
+    )
+    if chauffeur_jobs:
+        sections.extend(_job_card(job) for job in chauffeur_jobs)
     else:
-        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new UK matches today.</p>')
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new chauffeur-titled vacancies today.</p>')
 
     sections.append(
-        f'<h2 style="font-family:Arial,sans-serif;margin-top:30px">🌍 International Markets — {len(international_jobs)} new jobs</h2>'
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:34px">➕ Additional Relevant Driver Roles — {len(additional_jobs)} new jobs</h2>'
     )
-    if international_jobs:
-        current_market = None
-        for job in international_jobs:
-            if job.market != current_market:
-                current_market = job.market
-                sections.append(
-                    f'<h3 style="font-family:Arial,sans-serif;margin:22px 0 10px">{html.escape(current_market)}</h3>'
-                )
-            sections.append(_job_card(job))
+    sections.append(
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Secondary results such as private driver, executive driver, VIP driver and security driver roles.</p>'
+    )
+    if additional_jobs:
+        sections.extend(_job_card(job) for job in additional_jobs)
     else:
-        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new international matches today.</p>')
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No additional matching driver roles today.</p>')
 
     return f"""
     <html><body style="max-width:860px;margin:auto;padding:22px;background:#fafafa">
       <div style="font-family:Arial,sans-serif">
         <h1 style="margin-bottom:4px">UK + International Chauffeur Jobs</h1>
-        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies across UK and international markets</p>
+        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies · chauffeur jobs shown first</p>
         {''.join(sections)}
         <p style="font-size:12px;color:#777;margin-top:30px">Automated search from public job boards. Always confirm that a vacancy is still open before applying.</p>
       </div>
@@ -278,36 +290,31 @@ def make_html(jobs: list[Job]) -> str:
 
 
 def make_text(jobs: list[Job]) -> str:
-    uk_jobs = [job for job in jobs if job.market == "United Kingdom"]
-    international_jobs = [job for job in jobs if job.market != "United Kingdom"]
+    chauffeur_jobs = [job for job in jobs if is_chauffeur_job(job)]
+    additional_jobs = [job for job in jobs if not is_chauffeur_job(job)]
 
     lines = [
         f"UK + International Chauffeur Jobs — {len(jobs)} new matching vacancies",
+        "Chauffeur-titled vacancies are always listed first and sorted by job title.",
         "",
-        f"UNITED KINGDOM — {len(uk_jobs)} new jobs",
+        f"CHAUFFEUR JOBS — {len(chauffeur_jobs)} new jobs",
         "",
     ]
 
-    for i, job in enumerate(uk_jobs, 1):
+    for i, job in enumerate(chauffeur_jobs, 1):
         lines += [
             f"{i}. {job.title}",
-            f"   {job.company} — {job.location}",
+            f"   {job.company} — {job.location} ({job.market})",
             f"   {job.site} | {job.date_posted} | {job.salary}",
             f"   {job.url}",
             "",
         ]
 
-    lines += ["", f"INTERNATIONAL MARKETS — {len(international_jobs)} new jobs", ""]
-    current_market = None
-    index = 0
-    for job in international_jobs:
-        if job.market != current_market:
-            current_market = job.market
-            lines += [f"--- {current_market} ---", ""]
-        index += 1
+    lines += ["", f"ADDITIONAL RELEVANT DRIVER ROLES — {len(additional_jobs)} new jobs", ""]
+    for i, job in enumerate(additional_jobs, 1):
         lines += [
-            f"{index}. {job.title}",
-            f"   {job.company} — {job.location}",
+            f"{i}. {job.title}",
+            f"   {job.company} — {job.location} ({job.market})",
             f"   {job.site} | {job.date_posted} | {job.salary}",
             f"   {job.url}",
             "",
@@ -329,6 +336,7 @@ def main() -> int:
 
     new_jobs = [job for job in jobs if job.uid not in seen]
     max_jobs = int(cfg["search"].get("max_email_jobs", 250))
+    # Because collect_jobs is priority-sorted, chauffeur vacancies take the email slots first.
     new_jobs = new_jobs[:max_jobs]
 
     if new_jobs:
