@@ -4,14 +4,12 @@ import hashlib
 import html
 import json
 import logging
+import math
 import os
-import smtplib
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +56,8 @@ def load_seen() -> dict[str, str]:
 
 def save_seen(seen: dict[str, str]) -> None:
     SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-    items = list(seen.items())[-5000:]
+    # Keep enough history to prevent repeat emails while avoiding unlimited growth.
+    items = list(seen.items())[-10000:]
     SEEN_PATH.write_text(json.dumps(dict(items), indent=2, ensure_ascii=False), encoding="utf-8")
 
 
@@ -92,10 +91,7 @@ def salary_text(row: pd.Series) -> str:
     max_amount = safe_text(row.get("max_amount"))
     currency = safe_text(row.get("currency"))
     if min_amount or max_amount:
-        if min_amount and max_amount:
-            amount = f"{min_amount}–{max_amount}"
-        else:
-            amount = min_amount or max_amount
+        amount = f"{min_amount}–{max_amount}" if min_amount and max_amount else (min_amount or max_amount)
         return " ".join(x for x in [currency, amount, interval] if x)
     return "Not stated"
 
@@ -111,47 +107,84 @@ def title_is_relevant(title: str, cfg: dict[str, Any]) -> bool:
 
 def terms_for_market(market: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
     all_terms = cfg["search"]["keywords"]
-    if market.get("priority") == "primary":
+    priority = market.get("priority", "extended")
+
+    if priority == "primary":
         return all_terms
-    preferred = ["chauffeur", "private chauffeur", "family chauffeur", "executive driver", "VIP driver", "security driver"]
-    return [t for t in all_terms if t in preferred]
+
+    if priority == "major":
+        preferred = {
+            "chauffeur",
+            "private chauffeur",
+            "family chauffeur",
+            "executive chauffeur",
+            "private driver",
+            "executive driver",
+            "VIP driver",
+            "security driver",
+        }
+    else:
+        preferred = {
+            "chauffeur",
+            "private chauffeur",
+            "executive driver",
+            "VIP driver",
+        }
+
+    return [term for term in all_terms if term in preferred]
 
 
 def scrape_one(term: str, market: dict[str, Any], cfg: dict[str, Any]) -> pd.DataFrame:
     sites = cfg["search"].get("sites", ["indeed", "linkedin", "google"])
     location = market["location"]
+    hours_old = int(cfg["search"].get("hours_old", 168))
+    days_old = max(1, math.ceil(hours_old / 24))
+
     kwargs = dict(
         site_name=sites,
         search_term=term,
-        google_search_term=f'{term} jobs in {location} posted in the last 3 days',
+        google_search_term=f'{term} jobs in {location} posted in the last {days_old} days',
         location=location,
-        results_wanted=int(cfg["search"].get("results_per_search", 25)),
-        hours_old=int(cfg["search"].get("hours_old", 72)),
+        results_wanted=int(cfg["search"].get("results_per_search", 35)),
+        hours_old=hours_old,
         country_indeed=market["country_indeed"],
         linkedin_fetch_description=False,
         verbose=1,
     )
+
     try:
         frame = scrape_jobs(**kwargs)
         if frame is None or len(frame) == 0:
             return pd.DataFrame()
         frame["_market"] = market["name"]
+        frame["_priority"] = market.get("priority", "extended")
         frame["_term"] = term
         return frame
     except Exception as exc:
+        # One job board/country combination failing must not stop the worldwide run.
         log.warning("Search failed: %s / %s: %s", market["name"], term, exc)
         return pd.DataFrame()
 
 
 def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
     frames: list[pd.DataFrame] = []
-    for market in cfg["search"]["markets"]:
-        for term in terms_for_market(market, cfg):
-            log.info("Searching %s for %r", market["name"], term)
+    markets = cfg["search"]["markets"]
+    total_searches = sum(len(terms_for_market(market, cfg)) for market in markets)
+    completed = 0
+
+    log.info("Starting UK + International scan: %d markets, %d searches", len(markets), total_searches)
+
+    for market in markets:
+        terms = terms_for_market(market, cfg)
+        log.info("Market %s: %d search terms", market["name"], len(terms))
+        for term in terms:
+            completed += 1
+            log.info("[%d/%d] Searching %s for %r", completed, total_searches, market["name"], term)
             frame = scrape_one(term, market, cfg)
             if not frame.empty:
                 frames.append(frame)
-            time.sleep(1.2)
+            # Small delay lowers the chance of job-board throttling during a large scan.
+            time.sleep(0.8)
 
     if not frames:
         return []
@@ -164,6 +197,7 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
         title = safe_text(row.get("title"))
         if not title or not title_is_relevant(title, cfg):
             continue
+
         uid = build_uid(row)
         url = safe_text(row.get("job_url_direct")) or safe_text(row.get("job_url"))
         job = Job(
@@ -180,75 +214,111 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
         )
         dedup.setdefault(uid, job)
 
-    return list(dedup.values())
+    jobs = list(dedup.values())
+    jobs.sort(key=lambda job: (0 if job.market == "United Kingdom" else 1, job.market.lower(), job.title.lower()))
+    return jobs
+
+
+def _job_card(job: Job) -> str:
+    link = (
+        f'<a href="{html.escape(job.url)}" style="color:#0b57d0;font-weight:700">Open vacancy</a>'
+        if job.url
+        else "No direct link"
+    )
+    return f"""
+    <div style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:0 0 14px 0;font-family:Arial,sans-serif;background:#fff">
+      <div style="font-size:18px;font-weight:700">{html.escape(job.title)}</div>
+      <div style="margin-top:5px"><strong>{html.escape(job.company)}</strong> · {html.escape(job.location)}</div>
+      <div style="margin-top:5px;color:#555">Market: {html.escape(job.market)} · Source: {html.escape(job.site)} · Posted: {html.escape(job.date_posted)}</div>
+      <div style="margin-top:5px">Salary: {html.escape(job.salary)}</div>
+      <div style="margin-top:10px">{link}</div>
+    </div>
+    """
 
 
 def make_html(jobs: list[Job]) -> str:
     today = datetime.now(timezone.utc).strftime("%d %B %Y")
-    cards = []
-    for job in jobs:
-        link = f'<a href="{html.escape(job.url)}" style="color:#0b57d0;font-weight:700">Open vacancy</a>' if job.url else "No direct link"
-        cards.append(
-            f"""
-            <div style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:0 0 14px 0;font-family:Arial,sans-serif">
-              <div style="font-size:18px;font-weight:700">{html.escape(job.title)}</div>
-              <div style="margin-top:5px"><strong>{html.escape(job.company)}</strong> · {html.escape(job.location)}</div>
-              <div style="margin-top:5px;color:#555">Market: {html.escape(job.market)} · Source: {html.escape(job.site)} · Posted: {html.escape(job.date_posted)}</div>
-              <div style="margin-top:5px">Salary: {html.escape(job.salary)}</div>
-              <div style="margin-top:10px">{link}</div>
-            </div>
-            """
-        )
+    uk_jobs = [job for job in jobs if job.market == "United Kingdom"]
+    international_jobs = [job for job in jobs if job.market != "United Kingdom"]
+
+    sections: list[str] = []
+    sections.append(
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:26px">🇬🇧 United Kingdom — {len(uk_jobs)} new jobs</h2>'
+    )
+    if uk_jobs:
+        sections.extend(_job_card(job) for job in uk_jobs)
+    else:
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new UK matches today.</p>')
+
+    sections.append(
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:30px">🌍 International Markets — {len(international_jobs)} new jobs</h2>'
+    )
+    if international_jobs:
+        current_market = None
+        for job in international_jobs:
+            if job.market != current_market:
+                current_market = job.market
+                sections.append(
+                    f'<h3 style="font-family:Arial,sans-serif;margin:22px 0 10px">{html.escape(current_market)}</h3>'
+                )
+            sections.append(_job_card(job))
+    else:
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new international matches today.</p>')
+
     return f"""
-    <html><body style="max-width:820px;margin:auto;padding:22px;background:#fafafa">
+    <html><body style="max-width:860px;margin:auto;padding:22px;background:#fafafa">
       <div style="font-family:Arial,sans-serif">
-        <h1 style="margin-bottom:4px">Daily Chauffeur Jobs</h1>
-        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies</p>
-        {''.join(cards)}
-        <p style="font-size:12px;color:#777">Automated search from public job boards. Always confirm that a vacancy is still open before applying.</p>
+        <h1 style="margin-bottom:4px">UK + International Chauffeur Jobs</h1>
+        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies across UK and international markets</p>
+        {''.join(sections)}
+        <p style="font-size:12px;color:#777;margin-top:30px">Automated search from public job boards. Always confirm that a vacancy is still open before applying.</p>
       </div>
     </body></html>
     """
 
 
 def make_text(jobs: list[Job]) -> str:
-    lines = [f"Daily Chauffeur Jobs — {len(jobs)} new matching vacancies", ""]
-    for i, job in enumerate(jobs, 1):
+    uk_jobs = [job for job in jobs if job.market == "United Kingdom"]
+    international_jobs = [job for job in jobs if job.market != "United Kingdom"]
+
+    lines = [
+        f"UK + International Chauffeur Jobs — {len(jobs)} new matching vacancies",
+        "",
+        f"UNITED KINGDOM — {len(uk_jobs)} new jobs",
+        "",
+    ]
+
+    for i, job in enumerate(uk_jobs, 1):
         lines += [
             f"{i}. {job.title}",
             f"   {job.company} — {job.location}",
-            f"   {job.market} | {job.site} | {job.date_posted} | {job.salary}",
+            f"   {job.site} | {job.date_posted} | {job.salary}",
             f"   {job.url}",
             "",
         ]
+
+    lines += ["", f"INTERNATIONAL MARKETS — {len(international_jobs)} new jobs", ""]
+    current_market = None
+    index = 0
+    for job in international_jobs:
+        if job.market != current_market:
+            current_market = job.market
+            lines += [f"--- {current_market} ---", ""]
+        index += 1
+        lines += [
+            f"{index}. {job.title}",
+            f"   {job.company} — {job.location}",
+            f"   {job.site} | {job.date_posted} | {job.salary}",
+            f"   {job.url}",
+            "",
+        ]
+
     return "\n".join(lines)
 
 
 def send_email(jobs: list[Job], cfg: dict[str, Any]) -> None:
-    smtp_user = os.environ.get("SMTP_USERNAME", "").strip()
-    smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
-    if not smtp_user or not smtp_password:
-        raise RuntimeError("SMTP_USERNAME and SMTP_PASSWORD GitHub secrets are required")
-
-    configured_to = os.environ.get("EMAIL_TO", "").strip() or str(cfg["email"]["to"]).strip()
-    recipients = [address.strip() for address in configured_to.replace(";", ",").split(",") if address.strip()]
-    if not recipients:
-        raise RuntimeError("At least one recipient is required in EMAIL_TO or config.yaml")
-
-    prefix = cfg["email"].get("subject_prefix", "Daily Chauffeur Jobs")
-    subject = f"{prefix}: {len(jobs)} new jobs"
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText(make_text(jobs), "plain", "utf-8"))
-    msg.attach(MIMEText(make_html(jobs), "html", "utf-8"))
-
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.sendmail(smtp_user, recipients, msg.as_string())
+    # smtp_runner.py replaces this function with the Hostinger SMTP sender.
+    raise RuntimeError("Run smtp_runner.py so the configured SMTP transport is used")
 
 
 def main() -> int:
@@ -258,7 +328,7 @@ def main() -> int:
     log.info("Collected %d relevant unique jobs", len(jobs))
 
     new_jobs = [job for job in jobs if job.uid not in seen]
-    max_jobs = int(cfg["search"].get("max_email_jobs", 120))
+    max_jobs = int(cfg["search"].get("max_email_jobs", 250))
     new_jobs = new_jobs[:max_jobs]
 
     if new_jobs:
@@ -271,6 +341,7 @@ def main() -> int:
     else:
         send_email([], cfg)
         log.info("No unseen matching jobs today; sent zero-result email")
+
     return 0
 
 
