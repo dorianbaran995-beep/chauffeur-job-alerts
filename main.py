@@ -152,11 +152,9 @@ def terms_for_market(market: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
     preferred = {
         "chauffeur",
         "private chauffeur",
-        "family chauffeur",
         "executive chauffeur",
         "private driver",
         "executive driver",
-        "VIP driver",
         "security driver",
     }
     return [term for term in all_terms if term in preferred]
