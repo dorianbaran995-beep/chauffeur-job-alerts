@@ -5,7 +5,6 @@ import html
 import json
 import logging
 import math
-import os
 import sys
 import time
 from dataclasses import dataclass
@@ -33,6 +32,7 @@ class Job:
     company: str
     location: str
     market: str
+    priority: str
     site: str
     date_posted: str
     salary: str
@@ -95,12 +95,20 @@ def salary_text(row: pd.Series) -> str:
     return "Not stated"
 
 
-def title_is_relevant(title: str, cfg: dict[str, Any]) -> bool:
+def title_is_relevant(title: str, priority: str, cfg: dict[str, Any]) -> bool:
     t = title.lower()
-    includes = [x.lower() for x in cfg["filter"].get("include_title_terms", [])]
-    excludes = [x.lower() for x in cfg["filter"].get("exclude_title_terms", [])]
-    if any(x in t for x in excludes):
+    base_excludes = [x.lower() for x in cfg["filter"].get("exclude_title_terms", [])]
+    if any(x in t for x in base_excludes):
         return False
+
+    if priority == "local":
+        local_excludes = [x.lower() for x in cfg["filter"].get("local_exclude_title_terms", [])]
+        if any(x in t for x in local_excludes):
+            return False
+        local_includes = [x.lower() for x in cfg["filter"].get("local_include_title_terms", ["driver", "chauffeur"])]
+        return any(x in t for x in local_includes)
+
+    includes = [x.lower() for x in cfg["filter"].get("include_title_terms", [])]
     return any(x in t for x in includes)
 
 
@@ -109,43 +117,48 @@ def is_chauffeur_job(job: Job) -> bool:
     return "chauffeur" in job.title.lower()
 
 
+def is_doncaster_local_job(job: Job) -> bool:
+    """Broader non-chauffeur driving jobs from the Doncaster-area scan."""
+    return job.priority == "local" and not is_chauffeur_job(job)
+
+
 def job_sort_key(job: Job) -> tuple[Any, ...]:
-    """Put chauffeur jobs first, with UK jobs first inside each section."""
+    """Chauffeur first, then Doncaster local, then other UK premium driver roles."""
+    if is_chauffeur_job(job):
+        section = 0
+    elif is_doncaster_local_job(job):
+        section = 1
+    else:
+        section = 2
+
     return (
-        0 if is_chauffeur_job(job) else 1,
-        0 if job.market == "United Kingdom" else 1,
+        section,
         job.title.lower(),
-        job.market.lower(),
+        job.location.lower(),
         job.company.lower(),
     )
 
 
 def terms_for_market(market: dict[str, Any], cfg: dict[str, Any]) -> list[str]:
     all_terms = cfg["search"]["keywords"]
-    priority = market.get("priority", "extended")
+    priority = market.get("priority", "major")
+
+    if priority == "local":
+        return cfg["search"].get("local_keywords", ["driver", "chauffeur"])
 
     if priority == "primary":
         return all_terms
 
-    if priority == "major":
-        preferred = {
-            "chauffeur",
-            "private chauffeur",
-            "family chauffeur",
-            "executive chauffeur",
-            "private driver",
-            "executive driver",
-            "VIP driver",
-            "security driver",
-        }
-    else:
-        preferred = {
-            "chauffeur",
-            "private chauffeur",
-            "executive driver",
-            "VIP driver",
-        }
-
+    preferred = {
+        "chauffeur",
+        "private chauffeur",
+        "family chauffeur",
+        "executive chauffeur",
+        "private driver",
+        "executive driver",
+        "VIP driver",
+        "security driver",
+    }
     return [term for term in all_terms if term in preferred]
 
 
@@ -160,6 +173,7 @@ def scrape_one(term: str, market: dict[str, Any], cfg: dict[str, Any]) -> pd.Dat
         search_term=term,
         google_search_term=f'{term} jobs in {location} posted in the last {days_old} days',
         location=location,
+        distance=int(market.get("distance", 50)),
         results_wanted=int(cfg["search"].get("results_per_search", 35)),
         hours_old=hours_old,
         country_indeed=market["country_indeed"],
@@ -172,7 +186,7 @@ def scrape_one(term: str, market: dict[str, Any], cfg: dict[str, Any]) -> pd.Dat
         if frame is None or len(frame) == 0:
             return pd.DataFrame()
         frame["_market"] = market["name"]
-        frame["_priority"] = market.get("priority", "extended")
+        frame["_priority"] = market.get("priority", "major")
         frame["_term"] = term
         return frame
     except Exception as exc:
@@ -186,7 +200,7 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
     total_searches = sum(len(terms_for_market(market, cfg)) for market in markets)
     completed = 0
 
-    log.info("Starting UK + International scan: %d markets, %d searches", len(markets), total_searches)
+    log.info("Starting UK-wide chauffeur + Doncaster driver scan: %d markets, %d searches", len(markets), total_searches)
 
     for market in markets:
         terms = terms_for_market(market, cfg)
@@ -208,7 +222,8 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
     dedup: dict[str, Job] = {}
     for _, row in data.iterrows():
         title = safe_text(row.get("title"))
-        if not title or not title_is_relevant(title, cfg):
+        priority = safe_text(row.get("_priority")) or "major"
+        if not title or not title_is_relevant(title, priority, cfg):
             continue
 
         uid = build_uid(row)
@@ -219,6 +234,7 @@ def collect_jobs(cfg: dict[str, Any]) -> list[Job]:
             company=safe_text(row.get("company")) or "Not stated",
             location=safe_text(row.get("location")) or safe_text(row.get("_market")),
             market=safe_text(row.get("_market")),
+            priority=priority,
             site=safe_text(row.get("site")) or "Job board",
             date_posted=safe_text(row.get("date_posted")) or "Recently posted",
             salary=salary_text(row),
@@ -242,7 +258,7 @@ def _job_card(job: Job) -> str:
     <div style="border:1px solid #ddd;border-radius:10px;padding:16px;margin:0 0 14px 0;font-family:Arial,sans-serif;background:#fff">
       <div style="font-size:18px;font-weight:700">{html.escape(job.title)}</div>
       <div style="margin-top:5px"><strong>{html.escape(job.company)}</strong> · {html.escape(job.location)}</div>
-      <div style="margin-top:5px;color:#555">Market: {html.escape(job.market)} · Source: {html.escape(job.site)} · Posted: {html.escape(job.date_posted)}</div>
+      <div style="margin-top:5px;color:#555">Search area: {html.escape(job.market)} · Source: {html.escape(job.site)} · Posted: {html.escape(job.date_posted)}</div>
       <div style="margin-top:5px">Salary: {html.escape(job.salary)}</div>
       <div style="margin-top:10px">{link}</div>
     </div>
@@ -252,36 +268,48 @@ def _job_card(job: Job) -> str:
 def make_html(jobs: list[Job]) -> str:
     today = datetime.now(timezone.utc).strftime("%d %B %Y")
     chauffeur_jobs = [job for job in jobs if is_chauffeur_job(job)]
-    additional_jobs = [job for job in jobs if not is_chauffeur_job(job)]
+    doncaster_jobs = [job for job in jobs if is_doncaster_local_job(job)]
+    additional_jobs = [job for job in jobs if not is_chauffeur_job(job) and not is_doncaster_local_job(job)]
 
     sections: list[str] = []
     sections.append(
-        f'<h2 style="font-family:Arial,sans-serif;margin-top:26px">🚘 Chauffeur Jobs — {len(chauffeur_jobs)} new jobs</h2>'
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:26px">🚘 UK Chauffeur Jobs — {len(chauffeur_jobs)} new jobs</h2>'
     )
     sections.append(
-        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Priority results: UK chauffeur vacancies first, followed by international chauffeur vacancies.</p>'
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">UK-wide coverage: a national search plus a grid of major cities across England, Scotland, Wales and Northern Ireland.</p>'
     )
     if chauffeur_jobs:
         sections.extend(_job_card(job) for job in chauffeur_jobs)
     else:
-        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new chauffeur-titled vacancies today.</p>')
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new chauffeur-titled vacancies found in this run.</p>')
 
     sections.append(
-        f'<h2 style="font-family:Arial,sans-serif;margin-top:34px">➕ Additional Relevant Driver Roles — {len(additional_jobs)} new jobs</h2>'
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:34px">📍 Doncaster Area Driving Jobs Worth a Look — {len(doncaster_jobs)} new jobs</h2>'
     )
     sections.append(
-        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Secondary results such as private driver, executive driver, VIP driver and security driver roles, with UK vacancies first.</p>'
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Broader driving vacancies within roughly 30 miles of Doncaster. Delivery, courier, HGV/LGV, taxi, bus/coach and similar low-relevance roles are filtered out.</p>'
+    )
+    if doncaster_jobs:
+        sections.extend(_job_card(job) for job in doncaster_jobs)
+    else:
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No new Doncaster-area driving vacancies passed the quality filters in this run.</p>')
+
+    sections.append(
+        f'<h2 style="font-family:Arial,sans-serif;margin-top:34px">➕ Other UK Private / Executive / Security Driver Roles — {len(additional_jobs)} new jobs</h2>'
+    )
+    sections.append(
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Private driver, executive driver, VIP driver, security driver and closely related UK roles.</p>'
     )
     if additional_jobs:
         sections.extend(_job_card(job) for job in additional_jobs)
     else:
-        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No additional matching driver roles today.</p>')
+        sections.append('<p style="font-family:Arial,sans-serif;color:#666">No additional matching UK premium-driver roles in this run.</p>')
 
     return f"""
     <html><body style="max-width:860px;margin:auto;padding:22px;background:#fafafa">
       <div style="font-family:Arial,sans-serif">
-        <h1 style="margin-bottom:4px">UK + International Chauffeur Jobs</h1>
-        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies · chauffeur jobs shown first · UK first</p>
+        <h1 style="margin-bottom:4px">UK Chauffeur + Doncaster Driving Jobs</h1>
+        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies · chauffeur jobs first</p>
         {''.join(sections)}
         <p style="font-size:12px;color:#777;margin-top:30px">Automated search from public job boards. Always confirm that a vacancy is still open before applying.</p>
       </div>
@@ -291,13 +319,14 @@ def make_html(jobs: list[Job]) -> str:
 
 def make_text(jobs: list[Job]) -> str:
     chauffeur_jobs = [job for job in jobs if is_chauffeur_job(job)]
-    additional_jobs = [job for job in jobs if not is_chauffeur_job(job)]
+    doncaster_jobs = [job for job in jobs if is_doncaster_local_job(job)]
+    additional_jobs = [job for job in jobs if not is_chauffeur_job(job) and not is_doncaster_local_job(job)]
 
     lines = [
-        f"UK + International Chauffeur Jobs — {len(jobs)} new matching vacancies",
-        "Chauffeur-titled vacancies are listed first, with UK jobs before international jobs.",
+        f"UK Chauffeur + Doncaster Driving Jobs — {len(jobs)} new matching vacancies",
+        "UK chauffeur vacancies are listed first, followed by Doncaster-area driving jobs worth a look, then other UK premium driver roles.",
         "",
-        f"CHAUFFEUR JOBS — {len(chauffeur_jobs)} new jobs",
+        f"UK CHAUFFEUR JOBS — {len(chauffeur_jobs)} new jobs",
         "",
     ]
 
@@ -310,7 +339,17 @@ def make_text(jobs: list[Job]) -> str:
             "",
         ]
 
-    lines += ["", f"ADDITIONAL RELEVANT DRIVER ROLES — {len(additional_jobs)} new jobs", ""]
+    lines += ["", f"DONCASTER AREA DRIVING JOBS WORTH A LOOK — {len(doncaster_jobs)} new jobs", ""]
+    for i, job in enumerate(doncaster_jobs, 1):
+        lines += [
+            f"{i}. {job.title}",
+            f"   {job.company} — {job.location}",
+            f"   {job.site} | {job.date_posted} | {job.salary}",
+            f"   {job.url}",
+            "",
+        ]
+
+    lines += ["", f"OTHER UK PRIVATE / EXECUTIVE / SECURITY DRIVER ROLES — {len(additional_jobs)} new jobs", ""]
     for i, job in enumerate(additional_jobs, 1):
         lines += [
             f"{i}. {job.title}",
@@ -324,8 +363,8 @@ def make_text(jobs: list[Job]) -> str:
 
 
 def send_email(jobs: list[Job], cfg: dict[str, Any]) -> None:
-    # smtp_runner.py replaces this function with the Hostinger SMTP sender.
-    raise RuntimeError("Run smtp_runner.py so the configured SMTP transport is used")
+    # smtp_runner.py replaces this function with the Hostinger SMTP + Telegram sender.
+    raise RuntimeError("Run smtp_runner.py so the configured notification transport is used")
 
 
 def main() -> int:
@@ -335,9 +374,9 @@ def main() -> int:
     log.info("Collected %d relevant unique jobs", len(jobs))
 
     new_jobs = [job for job in jobs if job.uid not in seen]
-    max_jobs = int(cfg["search"].get("max_email_jobs", 250))
-    # Because collect_jobs is priority-sorted, chauffeur vacancies take the alert slots first,
-    # and UK vacancies take priority within each section.
+    max_jobs = int(cfg["search"].get("max_email_jobs", 300))
+    # collect_jobs is already section-sorted: chauffeur first, then Doncaster local,
+    # then other UK premium driver vacancies.
     new_jobs = new_jobs[:max_jobs]
 
     if new_jobs:
@@ -346,7 +385,7 @@ def main() -> int:
         for job in new_jobs:
             seen[job.uid] = now
         save_seen(seen)
-        log.info("Emailed %d new jobs", len(new_jobs))
+        log.info("Sent %d new jobs", len(new_jobs))
     else:
         send_email([], cfg)
         log.info("No unseen matching jobs today; sent zero-result email")
