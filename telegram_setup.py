@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from urllib import parse, request
 
 
@@ -17,13 +18,20 @@ def api_call(token: str, method: str, data: dict[str, str] | None = None) -> dic
     return result
 
 
+def write_summary(lines: list[str]) -> None:
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "").strip()
+    if not summary_path:
+        return
+    Path(summary_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     requested_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
     if not token:
         print("ERROR: TELEGRAM_BOT_TOKEN is missing.")
-        print("Add it in GitHub: Settings > Secrets and variables > Actions > New repository secret")
+        write_summary(["## ❌ Telegram setup failed", "`TELEGRAM_BOT_TOKEN` is missing."])
         return 1
 
     me = api_call(token, "getMe").get("result", {})
@@ -45,27 +53,39 @@ def main() -> int:
 
         for chat in candidates:
             chat_id = str(chat.get("id", "")).strip()
-            if chat_id:
+            if chat_id and chat.get("type") in {"group", "supergroup", "channel"}:
                 chats[chat_id] = chat
 
-    if chats:
-        print("\nTelegram destinations found:")
-        for chat_id, chat in chats.items():
-            title = chat.get("title") or chat.get("username") or chat.get("first_name") or "Unnamed chat"
-            chat_type = chat.get("type", "unknown")
-            username_text = f" (@{chat['username']})" if chat.get("username") else ""
-            print(f"  CHAT_ID={chat_id} | {chat_type} | {title}{username_text}")
-    else:
-        print("\nNo channel/group found yet.")
-        print("1. Add the bot to your Telegram channel/group.")
-        print("2. For a channel, make the bot an administrator with Post Messages permission.")
-        print("3. Post a NEW message after adding the bot.")
-        print("4. Run this GitHub Action again.")
+    summary = [f"## Telegram Setup — @{username}"]
+
+    if not chats:
+        print("\nERROR: No Telegram channel/group found yet.")
+        print("Add the bot to the destination, make it admin if it is a channel, post a NEW message, then run telegram_setup again.")
+        summary += [
+            "❌ **No channel or group was detected.**",
+            "",
+            "1. Add the bot to the Telegram channel/group.",
+            "2. For a channel, make it an administrator with **Post Messages** permission.",
+            "3. Post a **new message** after adding the bot.",
+            "4. Run `telegram_setup` again.",
+        ]
+        write_summary(summary)
+        return 2
+
+    print("\nTelegram destinations found:")
+    summary += ["✅ **Telegram destination(s) detected:**", ""]
+    for chat_id, chat in chats.items():
+        title = chat.get("title") or chat.get("username") or chat.get("first_name") or "Unnamed chat"
+        chat_type = chat.get("type", "unknown")
+        username_text = f" (@{chat['username']})" if chat.get("username") else ""
+        print(f"  CHAT_ID={chat_id} | {chat_type} | {title}{username_text}")
+        summary.append(f"- **{title}** — `{chat_id}` ({chat_type})")
 
     chat_id = requested_chat_id
     if not chat_id and len(chats) == 1:
         chat_id = next(iter(chats))
         print(f"\nOne destination found, using it automatically: {chat_id}")
+        summary += ["", f"Automatically selected: `{chat_id}`"]
 
     if chat_id:
         print(f"\nTesting Telegram delivery to {chat_id}...")
@@ -79,11 +99,14 @@ def main() -> int:
             },
         )
         print("SUCCESS: Test message sent.")
-        print(f"Use this value for TELEGRAM_CHAT_ID: {chat_id}")
+        summary += ["", "✅ **Test message sent successfully.**"]
     elif len(chats) > 1:
-        print("\nMore than one destination was found.")
-        print("Run the action again and enter the required CHAT_ID in the optional chat_id box.")
+        print("\nERROR: More than one destination found. Run again and enter the required CHAT_ID in the chat_id box.")
+        summary += ["", "⚠️ More than one destination was found. Run again and enter the required `CHAT_ID` in the `chat_id` box."]
+        write_summary(summary)
+        return 3
 
+    write_summary(summary)
     return 0
 
 
