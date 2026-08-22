@@ -1,4 +1,4 @@
-name: Daily UK + International chauffeur job search
+name: Daily UK chauffeur + Doncaster driving job search
 
 on:
   schedule:
@@ -77,7 +77,7 @@ jobs:
         if: steps.uk_schedule.outputs.run_search == 'true'
         run: pip install -r requirements.txt
 
-      - name: Search UK and international jobs and send alerts
+      - name: Search UK-wide chauffeur jobs and Doncaster driving jobs
         if: steps.uk_schedule.outputs.run_search == 'true'
         env:
           SMTP_HOST: smtp.hostinger.com
