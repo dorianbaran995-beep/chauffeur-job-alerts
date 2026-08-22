@@ -1,13 +1,13 @@
 email:
   to: ""
-  subject_prefix: "UK Chauffeur Jobs"
+  subject_prefix: "UK Chauffeur + Doncaster Driving Jobs"
 
 search:
   # Search the previous 7 days on every daily run. The seen-jobs file prevents
   # vacancies already sent from being sent again.
   hours_old: 168
-  results_per_search: 50
-  max_email_jobs: 250
+  results_per_search: 40
+  max_email_jobs: 300
   sites:
     - indeed
     - linkedin
@@ -15,8 +15,7 @@ search:
     - google
     - zip_recruiter
 
-  # UK-only search. Keep a wide range of private/VIP driver terminology so
-  # relevant vacancies are not missed when employers avoid the word chauffeur.
+  # Premium/private driver terms searched across the whole UK coverage grid.
   keywords:
     - chauffeur
     - private chauffeur
@@ -35,11 +34,185 @@ search:
     - principal driver
     - CEO driver
 
+  # Broader Doncaster-only search. This deliberately includes the generic word
+  # "driver", then uses the local title exclusions below to remove delivery,
+  # HGV, courier, taxi and other low-value noise.
+  local_keywords:
+    - driver
+    - chauffeur
+    - private chauffeur
+    - private driver
+    - personal driver
+    - executive driver
+    - company driver
+    - VIP driver
+    - security driver
+    - close protection driver
+    - transport driver
+    - fleet driver
+    - shuttle driver
+    - patient transport driver
+    - minibus driver
+    - school transport driver
+    - vehicle movement driver
+    - trade plate driver
+
+  # The broad UK query is retained, but we also search a city grid so a job is
+  # not missed simply because a job board does not return it for "United Kingdom".
   markets:
     - name: United Kingdom
       location: United Kingdom
       country_indeed: uk
       priority: primary
+      distance: 100
+
+    - name: London
+      location: London
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Birmingham
+      location: Birmingham
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Manchester
+      location: Manchester
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Liverpool
+      location: Liverpool
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Leeds
+      location: Leeds
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Sheffield
+      location: Sheffield
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: York
+      location: York
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Hull
+      location: Hull
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Newcastle
+      location: Newcastle upon Tyne
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Middlesbrough
+      location: Middlesbrough
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Nottingham
+      location: Nottingham
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Leicester
+      location: Leicester
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Derby
+      location: Derby
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Cambridge
+      location: Cambridge
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Oxford
+      location: Oxford
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Reading
+      location: Reading
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Bristol
+      location: Bristol
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Southampton
+      location: Southampton
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Brighton
+      location: Brighton
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Exeter
+      location: Exeter
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Plymouth
+      location: Plymouth
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Cardiff
+      location: Cardiff
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Swansea
+      location: Swansea
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Edinburgh
+      location: Edinburgh
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Glasgow
+      location: Glasgow
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Aberdeen
+      location: Aberdeen
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Dundee
+      location: Dundee
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Belfast
+      location: Belfast
+      country_indeed: uk
+      priority: major
+      distance: 50
+
+    # Local catch-all: broad driving jobs within roughly 30 miles of Doncaster.
+    - name: Doncaster Area
+      location: Doncaster, South Yorkshire
+      country_indeed: uk
+      priority: local
+      distance: 30
 
 filter:
   include_title_terms:
@@ -56,6 +229,11 @@ filter:
     - family driver
     - household driver
     - executive transport
+
+  # Broader local matching is allowed only for the Doncaster Area market.
+  local_include_title_terms:
+    - driver
+    - chauffeur
 
   exclude_title_terms:
     - delivery
@@ -75,3 +253,19 @@ filter:
     - rideshare
     - multi drop
     - multidrop
+
+  local_exclude_title_terms:
+    - class 1
+    - class 2
+    - 7.5t
+    - adr
+    - tanker
+    - tipper
+    - refuse
+    - waste
+    - bin lorry
+    - tram
+    - train driver
+    - warehouse
+    - reach truck
+    - order picker
