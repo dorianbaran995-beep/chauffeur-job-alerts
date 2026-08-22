@@ -110,11 +110,11 @@ def is_chauffeur_job(job: Job) -> bool:
 
 
 def job_sort_key(job: Job) -> tuple[Any, ...]:
-    """Put all chauffeur-titled jobs first, then sort everything by job title."""
+    """Put chauffeur jobs first, with UK jobs first inside each section."""
     return (
         0 if is_chauffeur_job(job) else 1,
-        job.title.lower(),
         0 if job.market == "United Kingdom" else 1,
+        job.title.lower(),
         job.market.lower(),
         job.company.lower(),
     )
@@ -259,7 +259,7 @@ def make_html(jobs: list[Job]) -> str:
         f'<h2 style="font-family:Arial,sans-serif;margin-top:26px">🚘 Chauffeur Jobs — {len(chauffeur_jobs)} new jobs</h2>'
     )
     sections.append(
-        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Priority results: every vacancy with chauffeur in the job title, across all markets.</p>'
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Priority results: UK chauffeur vacancies first, followed by international chauffeur vacancies.</p>'
     )
     if chauffeur_jobs:
         sections.extend(_job_card(job) for job in chauffeur_jobs)
@@ -270,7 +270,7 @@ def make_html(jobs: list[Job]) -> str:
         f'<h2 style="font-family:Arial,sans-serif;margin-top:34px">➕ Additional Relevant Driver Roles — {len(additional_jobs)} new jobs</h2>'
     )
     sections.append(
-        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Secondary results such as private driver, executive driver, VIP driver and security driver roles.</p>'
+        '<p style="font-family:Arial,sans-serif;color:#555;margin-top:-4px">Secondary results such as private driver, executive driver, VIP driver and security driver roles, with UK vacancies first.</p>'
     )
     if additional_jobs:
         sections.extend(_job_card(job) for job in additional_jobs)
@@ -281,7 +281,7 @@ def make_html(jobs: list[Job]) -> str:
     <html><body style="max-width:860px;margin:auto;padding:22px;background:#fafafa">
       <div style="font-family:Arial,sans-serif">
         <h1 style="margin-bottom:4px">UK + International Chauffeur Jobs</h1>
-        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies · chauffeur jobs shown first</p>
+        <p style="color:#555;margin-top:0">{today} · {len(jobs)} new matching vacancies · chauffeur jobs shown first · UK first</p>
         {''.join(sections)}
         <p style="font-size:12px;color:#777;margin-top:30px">Automated search from public job boards. Always confirm that a vacancy is still open before applying.</p>
       </div>
@@ -295,7 +295,7 @@ def make_text(jobs: list[Job]) -> str:
 
     lines = [
         f"UK + International Chauffeur Jobs — {len(jobs)} new matching vacancies",
-        "Chauffeur-titled vacancies are always listed first and sorted by job title.",
+        "Chauffeur-titled vacancies are listed first, with UK jobs before international jobs.",
         "",
         f"CHAUFFEUR JOBS — {len(chauffeur_jobs)} new jobs",
         "",
@@ -336,7 +336,8 @@ def main() -> int:
 
     new_jobs = [job for job in jobs if job.uid not in seen]
     max_jobs = int(cfg["search"].get("max_email_jobs", 250))
-    # Because collect_jobs is priority-sorted, chauffeur vacancies take the email slots first.
+    # Because collect_jobs is priority-sorted, chauffeur vacancies take the alert slots first,
+    # and UK vacancies take priority within each section.
     new_jobs = new_jobs[:max_jobs]
 
     if new_jobs:
