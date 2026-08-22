@@ -206,6 +206,41 @@ search:
       country_indeed: uk
       priority: major
       distance: 50
+    - name: Canterbury
+      location: Canterbury
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Norwich
+      location: Norwich
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Truro
+      location: Truro
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Carlisle
+      location: Carlisle
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Inverness
+      location: Inverness
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Wrexham
+      location: Wrexham
+      country_indeed: uk
+      priority: major
+      distance: 50
+    - name: Derry
+      location: Derry, Northern Ireland
+      country_indeed: uk
+      priority: major
+      distance: 50
 
     # Local catch-all: broad driving jobs within roughly 30 miles of Doncaster.
     - name: Doncaster Area
@@ -269,3 +304,9 @@ filter:
     - warehouse
     - reach truck
     - order picker
+    - pcv
+    - 7.5 tonne
+    - shunter
+    - yard driver
+    - car park
+    - amazon flex
