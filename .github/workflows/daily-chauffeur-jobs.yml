@@ -7,6 +7,19 @@ on:
     - cron: "55 5 * * *"
     - cron: "55 6 * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "What do you want to run?"
+        required: true
+        default: "job_search"
+        type: choice
+        options:
+          - job_search
+          - telegram_setup
+      chat_id:
+        description: "Telegram CHAT_ID (optional in telegram_setup mode; leave blank to auto-detect)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -16,9 +29,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  search-and-email:
+  chauffeur-alerts:
     runs-on: ubuntu-latest
-    # The worldwide search is intentionally large and can take longer than a UK-only scan.
     timeout-minutes: 120
     steps:
       - name: Check UK schedule
@@ -26,7 +38,11 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            if [ "${{ inputs.mode }}" = "job_search" ]; then
+              echo "run_search=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run_search=false" >> "$GITHUB_OUTPUT"
+            fi
             exit 0
           fi
 
@@ -35,29 +51,34 @@ jobs:
 
           if { [ "$scheduled_cron" = "55 5 * * *" ] && [ "$london_offset" = "+0100" ]; } || \
              { [ "$scheduled_cron" = "55 6 * * *" ] && [ "$london_offset" = "+0000" ]; }; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "run_search=true" >> "$GITHUB_OUTPUT"
           else
-            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "run_search=false" >> "$GITHUB_OUTPUT"
             echo "Skipping this UTC slot; it is not the 06:55 UK slot today."
           fi
 
       - name: Checkout
-        if: steps.uk_schedule.outputs.run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python
-        if: steps.uk_schedule.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
+      - name: Telegram Setup & Test
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'telegram_setup'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id }}
+        run: python telegram_setup.py
+
       - name: Install dependencies
-        if: steps.uk_schedule.outputs.run == 'true'
+        if: steps.uk_schedule.outputs.run_search == 'true'
         run: pip install -r requirements.txt
 
       - name: Search UK and international jobs and send alerts
-        if: steps.uk_schedule.outputs.run == 'true'
+        if: steps.uk_schedule.outputs.run_search == 'true'
         env:
           SMTP_HOST: smtp.hostinger.com
           SMTP_PORT: "465"
@@ -70,7 +91,7 @@ jobs:
         run: python smtp_runner.py
 
       - name: Save seen-job history
-        if: steps.uk_schedule.outputs.run == 'true'
+        if: steps.uk_schedule.outputs.run_search == 'true'
         run: |
           if git diff --quiet -- data/seen_jobs.json; then
             echo "No seen-job changes to save."
