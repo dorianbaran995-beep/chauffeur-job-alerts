@@ -3,9 +3,9 @@ name: Daily UK + International chauffeur job search
 on:
   schedule:
     # GitHub cron uses UTC. These two schedules plus the UK-time guard below
-    # keep delivery targeted at 06:55 Europe/London through both BST and GMT.
-    - cron: "55 5 * * *"
-    - cron: "55 6 * * *"
+    # keep delivery targeted at 06:30 Europe/London through both BST and GMT.
+    - cron: "30 5 * * *"
+    - cron: "30 6 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -49,12 +49,12 @@ jobs:
           london_offset="$(TZ=Europe/London date +%z)"
           scheduled_cron="${{ github.event.schedule }}"
 
-          if { [ "$scheduled_cron" = "55 5 * * *" ] && [ "$london_offset" = "+0100" ]; } || \
-             { [ "$scheduled_cron" = "55 6 * * *" ] && [ "$london_offset" = "+0000" ]; }; then
+          if { [ "$scheduled_cron" = "30 5 * * *" ] && [ "$london_offset" = "+0100" ]; } || \
+             { [ "$scheduled_cron" = "30 6 * * *" ] && [ "$london_offset" = "+0000" ]; }; then
             echo "run_search=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_search=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping this UTC slot; it is not the 06:55 UK slot today."
+            echo "Skipping this UTC slot; it is not the 06:30 UK slot today."
           fi
 
       - name: Checkout
