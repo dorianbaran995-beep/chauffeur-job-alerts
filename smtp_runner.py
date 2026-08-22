@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import smtplib
 import ssl
@@ -7,6 +8,7 @@ import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
+from urllib import parse, request
 
 import main as job_app
 
@@ -51,7 +53,93 @@ def send_email(jobs: list[job_app.Job], cfg: dict[str, Any]) -> None:
         raise RuntimeError("SMTP_SECURITY must be either 'ssl' or 'starttls'")
 
 
-job_app.send_email = send_email
+def _telegram_credentials() -> tuple[str, str]:
+    token = (
+        os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        or os.environ.get("BOT_TOKEN", "").strip()
+    )
+    chat_id = (
+        os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        or os.environ.get("CHAT_ID", "").strip()
+    )
+    return token, chat_id
+
+
+def _telegram_job_text(job: job_app.Job) -> str:
+    icon = "🚘" if job_app.is_chauffeur_job(job) else "➕"
+    lines = [
+        f"{icon} {job.title}",
+        f"🏢 {job.company}",
+        f"📍 {job.location} ({job.market})",
+        f"💰 {job.salary}",
+        f"🗓 {job.date_posted} · {job.site}",
+    ]
+    if job.url:
+        lines.append(f"🔗 {job.url}")
+    return "\n".join(lines)
+
+
+def _telegram_chunks(jobs: list[job_app.Job], max_chars: int = 3500) -> list[str]:
+    if not jobs:
+        return []
+
+    chauffeur_count = sum(1 for job in jobs if job_app.is_chauffeur_job(job))
+    header = (
+        f"🚘 CHAUFFEUR JOB ALERTS\n"
+        f"{len(jobs)} new matching vacancies · {chauffeur_count} chauffeur-titled\n\n"
+    )
+
+    chunks: list[str] = []
+    current = header
+    for job in jobs:
+        block = _telegram_job_text(job) + "\n\n"
+        if len(current) + len(block) > max_chars and current.strip():
+            chunks.append(current.rstrip())
+            current = ""
+        current += block
+
+    if current.strip():
+        chunks.append(current.rstrip())
+    return chunks
+
+
+def send_telegram(jobs: list[job_app.Job]) -> None:
+    token, chat_id = _telegram_credentials()
+    if not token or not chat_id:
+        job_app.log.info("Telegram not configured; skipping Telegram delivery")
+        return
+
+    if not jobs:
+        job_app.log.info("No new jobs; skipping Telegram zero-result message")
+        return
+
+    api_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    for chunk in _telegram_chunks(jobs):
+        payload = parse.urlencode(
+            {
+                "chat_id": chat_id,
+                "text": chunk,
+                "disable_web_page_preview": "true",
+            }
+        ).encode("utf-8")
+        req = request.Request(api_url, data=payload, method="POST")
+        with request.urlopen(req, timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+            if not body.get("ok"):
+                raise RuntimeError(f"Telegram API error: {body}")
+
+
+def send_notifications(jobs: list[job_app.Job], cfg: dict[str, Any]) -> None:
+    send_email(jobs, cfg)
+    try:
+        send_telegram(jobs)
+    except Exception as exc:
+        # Email is the primary transport. Do not cause duplicate email alerts on the next
+        # scheduled run just because Telegram temporarily failed.
+        job_app.log.error("Telegram delivery failed: %s", exc)
+
+
+job_app.send_email = send_notifications
 
 
 if __name__ == "__main__":
